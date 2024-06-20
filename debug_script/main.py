@@ -2,7 +2,7 @@ import pymupdf
 from pdfminer.high_level import extract_pages, extract_text
 from pdfminer.layout import LTTextContainer
 from pdfminer.layout import LAParams
-from pdf_extractor.dom import MyPage
+from tyrannotext.dom import MyPage
 
 if __name__ == '__main__':
 
@@ -15,7 +15,7 @@ if __name__ == '__main__':
             txt_page = page.get_textpage()
             page_dict = txt_page.extractDICT(sort=True)
             pp = MyPage(page_dict)
-            fout.write(pp.text + "\n\n")
+            fout.write(pp.get_text() + "\n\n")
     doc.close()
 
     # write as a binary file to support non-ASCII characters
