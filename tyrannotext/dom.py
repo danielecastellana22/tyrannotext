@@ -1,16 +1,14 @@
-from typing import Union
 from .utils import eprint
 from pymupdf import Rect, Point
-from itertools import combinations
 
 
 # percentage tolerance
-BBOX_TOL = 0.02
 ORIGIN_TOL = 0.01
 FONT_TOL = 0.02
+ALIGNMENT_TOL = 0.1
 #
 N_CHAR_DIST = 4
-N_LINE_DIST = 0.1  # percentage of line height to check if it is the same paragraph
+N_LINE_DIST = 0.8  # number of lines to check if it is the same paragraph
 
 
 class MyTextNode:
@@ -55,24 +53,6 @@ class MyTextNode:
             return self.bbox.x0 - other.bbox.x1
         else:
             return -1  # they are overlapped
-
-    '''
-    def is_almost_on_the_same_line(self, other: 'MyTextNode') -> float:
-        same_line_top_align = (abs(self.bbox.y0 - other.bbox.y0) / self.width) < BBOX_TOL  # x0 should be the same
-        same_line_bottom_align = (abs(self.bbox.y1 - other.bbox.y1) / self.width) < BBOX_TOL  # x1 should be the same
-        mid_point_1 = self.bbox.y0 + self.width / 2
-        mid_point_2 = other.bbox.y0 + other.width / 2
-        same_line_center_align = (abs(mid_point_2 - mid_point_1) / self.width) < BBOX_TOL  # midpoint should be the same
-        return same_line_top_align or same_line_center_align or same_line_bottom_align
-
-    def is_almost_on_the_same_column(self, other: 'MyTextNode') -> float:
-        same_col_left_align = (abs(self.bbox.x0 - other.bbox.x0) / self.width) < BBOX_TOL  # x0 should be the same
-        same_col_right_align = (abs(self.bbox.x1 - other.bbox.x1) / self.width) < BBOX_TOL  # x1 should be the same
-        mid_point_1 = self.bbox.x0 + self.width / 2
-        mid_point_2 = other.bbox.x0 + other.width / 2
-        same_col_center_align = (abs(mid_point_2 - mid_point_1) / self.width) < BBOX_TOL  # midpoint should be the same
-        return same_col_left_align or same_col_center_align or same_col_right_align
-    '''
 
     def has_almost_the_same_font_size(self, other: 'MyTextNode') -> bool:
         return (abs(self.font_size - other.font_size) / self.font_size) < FONT_TOL
@@ -168,13 +148,14 @@ class MyParagraph(MyTextNode):
     def is_close_vertically(self, other: MyLine):
         return (self.get_vertical_distance(other) / self.avg_line_height) < N_LINE_DIST
 
-    def get_same_column_score(self, other: MyLine):
+    def is_almost_on_the_same_column(self, other: MyLine):
         same_col_left_align_score = (abs(self.bbox.x0 - other.bbox.x0) / self.width) # x0 should be the same
         same_col_right_align_score = (abs(self.bbox.x1 - other.bbox.x1) / self.width)  # x1 should be the same
         mid_point_1 = self.bbox.x0 + self.width / 2
         mid_point_2 = other.bbox.x0 + other.width / 2
         same_col_center_align_score = (abs(mid_point_2 - mid_point_1) / self.width)  # midpoint should be the same
-        return min(same_col_left_align_score, same_col_center_align_score, same_col_right_align_score)
+        best_score = min(same_col_left_align_score, same_col_center_align_score, same_col_right_align_score)
+        return best_score < ALIGNMENT_TOL
 
     def append_line(self, new_line: MyLine):
         if not self.has_almost_the_same_font_size(new_line):
@@ -223,6 +204,19 @@ class MyParagraph(MyTextNode):
     @staticmethod
     def create_paragraph_from_list_of_lines(lines: list):
         lines.sort(key=lambda el: el.bbox.y0)
+        p = MyParagraph(lines[0])
+        # try to merge vertically
+        remaining_lines = []
+        for l in lines[1:]:
+            if p.is_close_vertically(l) and p.has_almost_the_same_font_size(l) and p.is_almost_on_the_same_column(l):
+                p.append_line(l)
+            else:
+                remaining_lines.append(l)
+        return p, remaining_lines
+
+    '''
+    def create_paragraph_from_list_of_lines(lines: list):
+        lines.sort(key=lambda el: el.bbox.y0)
         remaining_lines = lines.copy()
         p = MyParagraph(remaining_lines.pop(0))
 
@@ -233,7 +227,7 @@ class MyParagraph(MyTextNode):
             i = 0
             while i < len(remaining_lines):
                 l = remaining_lines[i]
-                if p.is_close_vertically(l) and p.has_almost_the_same_font_size(l):
+                if p.is_close_vertically(l) and p.has_almost_the_same_font_size(l) and p.get_same_column_score(l) < 0.1:
                     remaining_lines.pop(i)
                     lines_close_vertically.append(l)
                 else:
@@ -248,7 +242,7 @@ class MyParagraph(MyTextNode):
                 break
 
         return p, remaining_lines
-
+    '''
 
 class MyPage:
     # TODO: discar pages with not so many words
@@ -306,8 +300,8 @@ class MyPage:
         self.paragraphs = paragraphs
         self.bbox = Rect(0, 0, page_dict['width'], page_dict['height'])
 
-        # TODO: we have to consider also distance from the previous paragraph in the text
-        self.remove_footers()
+        # TODO: do we have to consider also distance from the previous paragraph in the text?
+        #self.remove_footers()
 
     def __is_near_the_bottom__(self, p: MyParagraph):
         if (self.bbox.y1 - p.bbox.y1) / p.avg_line_height < self.N_LINE_FOOTER_MARGIN:
