@@ -2,7 +2,7 @@ from tyrannotext.extractor import MyPDFExtractor
 
 if __name__ == '__main__':
 
-    id_file = '4_74'
+    id_file = '6_10'
     fname = f"data/{id_file}.pdf" # get document filename
     outname = f'data/{id_file}.txt'
     my_extractor = MyPDFExtractor()
