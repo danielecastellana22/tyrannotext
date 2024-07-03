@@ -259,7 +259,7 @@ class MyPage:
             for l in b['lines']:
                 for s in l['spans']:
                     my_s = MySpan.create_from_span_dict(s)
-                    if my_s is not None and len(my_s.text)>0:
+                    if my_s is not None and len(my_s.text)>0 and my_s.width > 0.01:
                         spans.append(my_s)
 
         # 2) Create Lines: We cluster text elements that are on the same line and with not so many horizonalt space
