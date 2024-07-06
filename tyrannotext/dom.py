@@ -20,15 +20,15 @@ class MyTextNode:
                 raise ValueError('If first_child is specified, the other arguments must be None!')
             self.bbox = Rect(first_child.bbox)
             self.font_size = first_child.font_size
-            self.__text__ = None
-            self.__children__ = [first_child]
+            self._text = None
+            self._children = [first_child]
         else:
             if bbox is None or font_size is None or text is None:
                 raise ValueError('If first_child is None, the other arguments must be specified!')
             self.bbox = Rect(bbox)
             self.font_size = font_size
-            self.__text__ = text
-            self.__children__ = []
+            self._text = text
+            self._children = []
 
     @property
     def width(self) -> float:
@@ -59,7 +59,10 @@ class MyTextNode:
 
     @property
     def text(self):
-        return self.__text__
+        if not self._text.isascii():
+            return '#'*len(self._text)
+        else:
+            return self._text
 
     def __repr__(self):
         return f'{self.text} at {self.bbox}'
@@ -71,7 +74,7 @@ class MySpan(MyTextNode):
     def __init__(self, bbox: tuple, font_size: float, text: str, origin: tuple):
         super(MySpan, self).__init__(bbox, font_size, text)
         self.origin = Point(origin)
-        self.avg_char_width = self.width / len(self.__text__)
+        self.avg_char_width = self.width / len(self._text)
 
     @classmethod
     def create_from_span_dict(cls, span_dict):
@@ -103,19 +106,19 @@ class MyLine(MyTextNode):
         if not self.has_almost_the_same_font_size(new_span):
             eprint("We are merging text elements with different font sizes! Are you sure?")
         self.bbox.include_rect(new_span.bbox)
-        self.__children__.append(new_span)
+        self._children.append(new_span)
         # update the average
-        n_child = len(self.__children__)
+        n_child = len(self._children)
         self.avg_char_width = (self.avg_char_width * (n_child-1) + new_span.avg_char_width) / n_child
 
     def merge_line(self, other):
-        for s in other.__children__:
+        for s in other._children:
             self.append_span(s)
 
     @property
     def text(self):
         s = ''
-        for el in self.__children__:
+        for el in self._children:
             if not s:
                 s = el.text
             else:
@@ -123,7 +126,7 @@ class MyLine(MyTextNode):
         return s.strip()
 
     def sort(self):
-        self.__children__.sort(key=lambda el: el.bbox.x0)
+        self._children.sort(key=lambda el: el.bbox.x0)
 
     @staticmethod
     def create_line_from_list_of_spans(spans: list):
@@ -161,15 +164,15 @@ class MyParagraph(MyTextNode):
         if not self.has_almost_the_same_font_size(new_line):
             eprint("We are merging text elements with different font sizes! Are you sure?")
         self.bbox.include_rect(new_line.bbox)
-        self.__children__.append(new_line)
+        self._children.append(new_line)
         # update the average
-        n_child = len(self.__children__)
+        n_child = len(self._children)
         self.avg_line_height = self.height / n_child
 
     @property
     def text(self):
         s = None
-        for el in self.__children__:
+        for el in self._children:
             if not s:
                 s = el.text
             elif s[-1] == '-':
@@ -181,8 +184,8 @@ class MyParagraph(MyTextNode):
         return s
 
     def sort(self):
-        self.__children__.sort(key=lambda el: el.bbox.y0)
-        for el in self.__children__:
+        self._children.sort(key=lambda el: el.bbox.y0)
+        for el in self._children:
             el.sort()
 
     def contains(self, other):
@@ -190,9 +193,9 @@ class MyParagraph(MyTextNode):
 
     def merge_inner_paragraph(self, other):
         assert self.contains(other)
-        for l2 in other.__children__:
+        for l2 in other._children:
             found = False
-            for l1 in self.__children__:
+            for l1 in self._children:
                 if l2.is_almost_on_the_same_line(l1):
                     l1.merge_line(l2)
                     found = True
