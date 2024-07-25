@@ -1,21 +1,30 @@
 import pymupdf
-from .dom import MyPage
-import os
+from .dom import TyrannoPage
 from .utils import eprint
+from .configs import *
 
-class MyPDFExtractor:
+
+__all__ = ['TyrannoExtractor']
+
+
+class TyrannoExtractor:
 
     # TODO: use init to setup some values (LINE_DIST, etc..)
-    def __init__(self, discard_pages_with_few_words=True):
-        self.discard_pages_with_few_words = discard_pages_with_few_words
+    def __init__(self, config: SimpleConfig=None):
+        if config is None:
+            config = SimpleConfig()
 
-    def extract_text_from_pdf(self, pdf_path):
+        self.config = config
+
+    def extract_text_from_pdf(self, pdf_path, discard_pages_with_few_words=True, page_idxs=None):
         doc = pymupdf.open(pdf_path)
         s = ''
         n_empty_pages = 0
         n_pages = 0
-        for page in doc:
+        for idx_pag, page in enumerate(doc):
             n_pages += 1
+            if page_idxs is not None and idx_pag not in page_idxs:
+                continue
             txt_page = page.get_textpage()
             page_dict = txt_page.extractDICT(sort=True)
             if len(page_dict['blocks']) == 0:
@@ -24,9 +33,9 @@ class MyPDFExtractor:
                 #page_dict = txt_page.extractDICT(sort=True)
                 n_empty_pages +=1
             else:
-                pp = MyPage(page_dict)
+                pp = TyrannoPage(page_dict, self.config)
                 page_text = pp.get_text()
-                if not self.discard_pages_with_few_words or self.__is_a_page_with_text(page_text):
+                if not discard_pages_with_few_words or self.__is_a_page_with_text(page_text):
                     s += page_text + "\n\n"
         doc.close()
         if n_empty_pages / n_pages > 0.5:
