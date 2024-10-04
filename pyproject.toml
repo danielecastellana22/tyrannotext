@@ -3,6 +3,7 @@ name = "tyrannotext"
 version = "0.0.2"
 authors = [
   { name="Daniele Castellana", email="danielecastellana22@gmail.com" },
+  { name="Maria Saveria Mavillonio", email="mariasaveria.mavillonio@phd.unipi.it" },
 ]
 description = "A package to extract text from pdf"
 readme = "README.md"
