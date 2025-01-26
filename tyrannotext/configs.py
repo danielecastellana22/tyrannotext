@@ -5,9 +5,9 @@ __all__ = ['SimpleConfig']
 
 _default_vals = {'origin_tol': 0.01,
                  'font_tol': 0.01,
-                 'alignment_tol': 0.01,
-                 'n_char_dist': 2,
-                 'n_line_dist': 0.8,
+                 'alignment_tol': 0.1,
+                 'n_char_dist': 3,
+                 'n_line_dist': 1.8,
                  'n_line_footer_margin': 5}
 
 

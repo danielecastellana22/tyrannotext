@@ -1,7 +1,12 @@
 from .utils import eprint
 from pymupdf import Rect, Point
+import statistics
 
 __all__ = ['TyrannoTextNode', 'TyrannoSpan', 'TyrannoLine', 'TyrannoParagraph', 'TyrannoPage']
+
+
+def almost_same_font_size(fs1, fs2, font_tol):
+    return (abs(fs1-fs2) / fs2) < font_tol
 
 
 class TyrannoTextNode:
@@ -38,6 +43,8 @@ class TyrannoTextNode:
             eprint("We are merging text elements with different font sizes! Are you sure?")
         self.bbox.include_rect(new_child.bbox)
         self._children.append(new_child)
+        self._inner_sort()
+        # TODO: keep elements already sorted with a binary tree
 
     def get_vertical_distance(self, other: 'TyrannoTextNode') -> float:
         if self.bbox.y1 <= other.bbox.y0:
@@ -56,7 +63,7 @@ class TyrannoTextNode:
             return -1  # they are overlapped
 
     def has_almost_the_same_font_size(self, other: 'TyrannoTextNode') -> bool:
-        return (abs(self.font_size - other.font_size) / self.font_size) < self.config.font_tol
+        return almost_same_font_size(other.font_size, self.font_size, self.config.font_tol)
 
     def is_almost_on_the_same_column(self, other: 'TyrannoTextNode')  -> bool:
         same_col_left_align_score = (abs(self.bbox.x0 - other.bbox.x0) / self.width) # x0 should be the same
@@ -65,6 +72,15 @@ class TyrannoTextNode:
         mid_point_2 = other.bbox.x0 + other.width / 2
         same_col_center_align_score = (abs(mid_point_2 - mid_point_1) / self.width)  # midpoint should be the same
         best_score = min(same_col_left_align_score, same_col_center_align_score, same_col_right_align_score)
+        return best_score < self.config.alignment_tol
+
+    def is_almost_on_the_same_row(self, other: 'TyrannoTextNode')  -> bool:
+        same_row_top_align_score = (abs(self.bbox.y0 - other.bbox.y0) / self.height) # x0 should be the same
+        same_row_bottom_align_score = (abs(self.bbox.y1 - other.bbox.y1) / self.height)  # x1 should be the same
+        mid_point_1 = self.bbox.y0 + self.height / 2
+        mid_point_2 = other.bbox.y0 + other.height / 2
+        same_row_middle_align_score = (abs(mid_point_2 - mid_point_1) / self.height)  # midpoint should be the same
+        best_score = min(same_row_top_align_score, same_row_middle_align_score, same_row_bottom_align_score)
         return best_score < self.config.alignment_tol
 
     def contains(self, other: 'TyrannoTextNode') -> bool:
@@ -85,6 +101,10 @@ class TyrannoTextNode:
     def __repr__(self):
         return f'{self.get_text()} at {self.bbox}'
 
+    def __iter__(self):
+        for c in self._children:
+            yield c
+
 
 class TyrannoSpan(TyrannoTextNode):
 
@@ -97,7 +117,14 @@ class TyrannoSpan(TyrannoTextNode):
     @classmethod
     def create_from_span_dict(cls, span_dict, config):
         t = span_dict['text'].strip()
-        fs = span_dict['size']
+        is_all_non_ascii = True
+        for i in range(len(t)):
+            if t[i:i+1].isascii():
+                is_all_non_ascii = False
+                break
+        if is_all_non_ascii:
+            return None
+        fs = int(span_dict['size'])
         bbox = span_dict['bbox']
         origin = span_dict['origin']
         if len(t) > 0:
@@ -115,7 +142,10 @@ class TyrannoLine(TyrannoTextNode):
         # we copy all the properties of first_span
         super(TyrannoLine, self).__init__(first_child=first_span)
         self.avg_char_width = first_span.avg_char_width
-        self.origin = Point(first_span.origin)
+
+    @property
+    def origin(self):
+        return self._children[0].origin
 
     def is_almost_on_the_same_line(self, other: TyrannoSpan) -> float:
         return (abs(self.origin.y - other.origin.y) / self.height) < self.config.origin_tol
@@ -123,24 +153,16 @@ class TyrannoLine(TyrannoTextNode):
     def is_close_horizontally(self, other: TyrannoSpan):
         return (self.get_horizontal_distance(other) / self.avg_char_width) < self.config.n_char_dist
 
+    def is_a_span_to_merge(self, other: TyrannoSpan):
+        return (self.is_almost_on_the_same_line(other)
+                and self.is_close_horizontally(other)
+                and self.has_almost_the_same_font_size(other))
+
     def append_span(self, new_span: TyrannoSpan) -> None:
         self._append_child(new_span)
         # update the average
         n_child = len(self._children)
         self.avg_char_width = (self.avg_char_width * (n_child-1) + new_span.avg_char_width) / n_child
-
-    @staticmethod
-    def create_line_from_list_of_spans(spans: list):
-        spans.sort(key=lambda el: el.bbox.x0)
-        l = TyrannoLine(spans[0])
-        # try to merge vertically
-        remaining_spans = []
-        for s in spans[1:]:
-            if l.is_almost_on_the_same_line(s) and l.is_close_horizontally(s) and l.has_almost_the_same_font_size(s):
-                l.append_span(s)
-            else:
-                remaining_spans.append(s)
-        return l, remaining_spans
 
     def _inner_sort(self):
         self._children.sort(key=lambda el: el.bbox.x0)
@@ -154,40 +176,50 @@ class TyrannoLine(TyrannoTextNode):
                 s += (' ' if s[-1] != ' ' else '') + el.get_text()
         return s.strip()
 
-    '''
-        def merge_line(self, other: 'TyrannoLine'):
-            for s in other._children:
-                self.append_span(s)
-    '''
+    @staticmethod
+    def create_list_of_lines_from_list_of_spans(spans: list):
+        spans.sort(key=lambda el: el.bbox.x0)
+        lines_list = []
+
+        while len(spans) > 0:
+
+            l = TyrannoLine(spans.pop(0))
+
+            found = True
+            while found:
+                found = False
+                s = None
+                for s in spans:
+                    if l.is_a_span_to_merge(s):
+                        found = True
+                        break
+
+                if found:
+                    l.append_span(s)
+                    spans.remove(s)
+
+            lines_list.append(l)
+
+        return lines_list
 
 
 class TyrannoParagraph(TyrannoTextNode):
 
     def __init__(self, first_line: TyrannoLine):
         super(TyrannoParagraph, self).__init__(first_child=first_line)
-        self.avg_line_height = first_line.height
+        self.font_size = first_line.font_size
+        self.col_id = None
 
     def is_close_vertically(self, other: TyrannoLine):
-        return (self.get_vertical_distance(other) / self.avg_line_height) < self.config.n_line_dist
+        return (abs(self._children[-1].origin.y - other.origin.y) / self.font_size) < self.config.n_line_dist
+
+    def is_a_line_to_merge(self, other: TyrannoLine):
+        return (self.is_close_vertically(other)
+                and self.has_almost_the_same_font_size(other)
+                and self.is_almost_on_the_same_column(other))
 
     def append_line(self, new_line: TyrannoLine):
         self._append_child(new_line)
-        # update the average
-        n_child = len(self._children)
-        self.avg_line_height = self.height / n_child
-
-    @staticmethod
-    def create_paragraph_from_list_of_lines(lines: list):
-        lines.sort(key=lambda el: el.bbox.y0)
-        p = TyrannoParagraph(lines[0])
-        # try to merge vertically
-        remaining_lines = []
-        for l in lines[1:]:
-            if p.is_close_vertically(l) and p.has_almost_the_same_font_size(l) and p.is_almost_on_the_same_column(l):
-                p.append_line(l)
-            else:
-                remaining_lines.append(l)
-        return p, remaining_lines
 
     def _inner_sort(self):
         self._children.sort(key=lambda el: el.bbox.y0)
@@ -205,59 +237,65 @@ class TyrannoParagraph(TyrannoTextNode):
                 s += el.get_text()
         return s
 
-    '''
-        def merge_inner_paragraph(self, other):
-            assert self.contains(other)
-            for l2 in other._children:
+    @staticmethod
+    def create_list_of_paragraph_from_list_of_lines(lines: list):
+        lines.sort(key=lambda el: el.bbox.y0)
+        par_list = []
+
+        while len(lines) > 0:
+
+            p = TyrannoParagraph(lines.pop(0))
+
+            found = True
+            while found:
                 found = False
-                for l1 in self._children:
-                    if l2.is_almost_on_the_same_line(l1):
-                        l1.merge_line(l2)
+                l = None
+                for l in lines:
+                    if p.is_a_line_to_merge(l):
                         found = True
                         break
-                if not found:
-                    eprint('Added new line when to merge an inner paragraph!')
-                    self.append_line(l2)
-    '''
 
+                if found:
+                    p.append_line(l)
+                    lines.remove(l)
 
-class TyrannoColumn(TyrannoTextNode):
+            par_list.append(p)
 
-    def __init__(self, first_line: TyrannoParagraph):
-        super(TyrannoColumn, self).__init__(first_child=first_line)
-
-    def append_paragraph(self, new_paragraph: TyrannoParagraph):
-        self._append_child(new_paragraph, allow_different_fonts=True)
-
-    @staticmethod
-    def create_column_from_list_of_paragraphs(paragraphs: list):
-        paragraphs.sort(key=lambda el: (el.bbox.x0, el.bbox.y0))
-        c = TyrannoColumn(paragraphs[0])
-        # try to merge vertically
-        remaining_paragraphs = []
-        for p in paragraphs[1:]:
-            if c.is_almost_on_the_same_column(p):
-                c.append_paragraph(p)
-            else:
-                remaining_paragraphs.append(p)
-        return c, remaining_paragraphs
-
-    def _inner_sort(self):
-        self._children.sort(key=lambda el: el.bbox.y0)
-
-    def get_text(self):
-        # TODO: this breaks when a text is splitted between two columns
-        return '\n'.join([el.get_text() for el in self._children])
+        return par_list
 
 
 class TyrannoPage:
-    # TODO: discard pages with not so many words
-    # TODO: detect and discard footnotes in pages
-    # TODO: detect if a PDF is made by images and call a OCR to retrieve the text
 
-    def __init__(self, page_dict, config):
+    def __init__(self, paragraphs, bbox, config):
+        self.bbox = bbox
 
-        self.config = config
+        # counting the number of spans for each font size
+        font_size_counts = {}
+        for p in paragraphs:
+            for l in p:
+                for s in l:
+                    # update font counting
+                    v = font_size_counts.setdefault(s.font_size, 0)
+                    font_size_counts[s.font_size] = v + 1
+        max_font_size = max(font_size_counts.keys())
+        most_freq = max(font_size_counts.values())
+        most_freq_font_size = [k for k in font_size_counts if font_size_counts[k] == most_freq][0]
+
+        title = None
+        title_font_size = None
+        if almost_same_font_size(paragraphs[0].font_size, max_font_size, config.font_tol) and paragraphs[0].font_size > most_freq_font_size:
+            title = paragraphs[0].get_text()
+            title_font_size = max_font_size
+            paragraphs.pop(0)
+
+        self.paragraphs = paragraphs
+        self.title = title
+        self.title_font_size = title_font_size
+
+
+
+    @staticmethod
+    def create_page_from_page_dict(page_dict: dict, config):
 
         # 1) we trasform each span dict as TextElement object
         spans = []
@@ -268,70 +306,75 @@ class TyrannoPage:
                     if my_s is not None and len(my_s.get_text()) > 0 and my_s.width > 0.01:
                         spans.append(my_s)
 
+        if len(spans) == 0:
+            return None
+
         # 2) Create Lines: We cluster text elements that are on the same line and with not so many horizonalt space
-        lines = []
-        while len(spans) > 0:
-            l, spans = TyrannoLine.create_line_from_list_of_spans(spans)
-            lines.append(l)
+        lines = TyrannoLine.create_list_of_lines_from_list_of_spans(spans)
 
         # 3) Create Paragraph: We cluster text element that are in the same column,
         # that are close vertically and have the same font size
-        paragraphs = []
-        while len(lines) > 0:
-            p, lines = TyrannoParagraph.create_paragraph_from_list_of_lines(lines)
-            paragraphs.append(p)
+        paragraphs = TyrannoParagraph.create_list_of_paragraph_from_list_of_lines(lines)
 
-        # # 4) check if there are paragraph with one inside the other:
-        # if yes, force to merge it by understanding where the text goes
-        # (this helps in case of justified text with a lot of space that is not merged in step 2)
-        # IT COULD BE A PROBLEM WITH FLOATING TEXT LIKE CAPTION
-        '''
-        i=0
-        while i < len(paragraphs):
-            j=i+1
-            while j < len(paragraphs):
-                if paragraphs[i].contains(paragraphs[j]):
-                    paragraphs[i].merge_inner_paragraph(paragraphs[j])
-                    paragraphs.pop(j)
-                else:
-                    j+=1
-            i+=1
-        '''
+        # TODO: 4) check if there are paragraph with one inside the other:
 
-        # 5) create columns: we cluster paragraph in the same column
-        self.columns = []
+        # 5) sort paragraph according to page layout (i.e. the columns)
+        paragraphs.sort(key=lambda el: (el.bbox.x0, el.bbox.y0))
+        for p in paragraphs:
+            p.rec_sort()
+
+        col_list = []
         while len(paragraphs) > 0:
-            c, paragraphs = TyrannoColumn.create_column_from_list_of_paragraphs(paragraphs)
-            self.columns.append(c)
 
-        # 6) sort the remaining text elements vertically and horizontally
-        self.columns.sort(key=lambda el: (el.bbox.y0, el.bbox.x0))
-        for c in self.columns:
-            c.rec_sort()
+            curr_p = paragraphs.pop(0)
+            on_same_col = []
+            for p in paragraphs:
+                # check if p is on right of curr_p
+                if curr_p.is_almost_on_the_same_column(p):
+                    on_same_col.append(p)
 
-        self.bbox = Rect(0, 0, page_dict['width'], page_dict['height'])
+            for p in on_same_col:
+                paragraphs.remove(p)
 
-        # TODO: do we have to consider also distance from the previous paragraph in the text?
-        #self.remove_footers()
+            on_same_col.insert(0, curr_p)
+            col_list.append(on_same_col)
+
+        paragraphs = []
+        all_font_sizes = set()
+        for c in col_list:
+            for p in c:
+                paragraphs.append(p)
+                all_font_sizes.add(p.font_size)
+
+        # 6) remove footnotes
+        # TODO: detect and discard footnotes in pages
+
+        # 7) build the page
+        return TyrannoPage(paragraphs, Rect(0, 0, page_dict['width'], page_dict['height']), config)
 
     def get_text(self):
-        return '\n'.join([el.get_text() for el in self.columns])
+        s = ''
+        if self.title is not None:
+            s += self.title + '\n'
+        s += '\n'.join([p.get_text() for p in self.paragraphs])
+        return s
 
-    '''
-        def __is_near_the_bottom(self, p: TyrannoParagraph):
-            if (self.bbox.y1 - p.bbox.y1) / p.avg_line_height < self.config.n_line_footer_margin:
-                return True
+    def contains_enough_text(self):
+        text_in_page = self.get_text()
+
+        if len(text_in_page) == 0:
+            return False
+
+        number_of_digits = 0
+        number_of_letters = 0
+        number_of_other_chars = 0
+        for c in text_in_page:
+            if c.isnumeric():
+                number_of_digits += 1
+            elif c.isalpha():
+                number_of_letters += 1
             else:
-                return False
+                number_of_other_chars += 1
 
-        def remove_footers(self):
-            i = 0
-            while i < len(self.columns):
-                if self.__is_near_the_bottom(self.columns[i]):
-                    self.columns.pop(i)
-                else:
-                    i+=1
-
-        def remove_headers(self):
-            pass
-        '''
+        # 0.5 could be improved
+        return number_of_letters / len(text_in_page) > 0.5
