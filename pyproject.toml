@@ -1,6 +1,6 @@
 [project]
 name = "tyrannotext"
-version = "0.0.3"
+version = "0.0.4"
 authors = [
   { name="Daniele Castellana", email="danielecastellana22@gmail.com" },
   { name="Maria Saveria Mavillonio", email="mariasaveria.mavillonio@phd.unipi.it" },
@@ -14,7 +14,7 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
-  'pymupdf~=1.24.4',
+  'pymupdf4llm'
 ]
 
 [project.urls]
