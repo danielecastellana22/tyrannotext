@@ -87,5 +87,8 @@ class TyrannoSection:
         return f'{self.title}'
 
     def get_plain_text(self, exclude_title=False):
-        rec_string = '\n'.join([s.get_plain_text() for s in self.subsections])
-        return f'{self.title}\n {self.text}\n {rec_string}'
+        plain_text = f'{self.title}\n' if not exclude_title else ''
+        plain_text += f'{self.text}\n'
+        rec_string = '\n'.join([s.get_plain_text(exclude_title) for s in self.subsections])
+        plain_text += f'{rec_string}\n'
+        return plain_text
