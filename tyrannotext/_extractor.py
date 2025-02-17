@@ -48,6 +48,13 @@ class TyrannoDocument:
     def get_plain_text(self):
         return self.root.get_plain_text()
 
+    def get_main_section_title_list(self):
+        s = self.root
+        while len(s.subsections) == 1:
+            s = s.subsections[0]
+
+        title_list = [s_sub.title for s_sub in s.subsections]
+        return title_list
 
 class TyrannoSection:
 
