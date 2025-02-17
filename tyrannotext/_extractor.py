@@ -28,10 +28,11 @@ class TyrannoDocument:
         for el in parsed_md.children:
             if isinstance(el, Heading):
                 # we create a new section
-                new_title = el.children[0].children
-                if curr_section.title != new_title:
-                    self.root.add_section(curr_section)
-                    curr_section = TyrannoSection(new_title, el.level)
+                if len(el.children) > 0:
+                    new_title = el.children[0].children
+                    if curr_section.title != new_title:
+                        self.root.add_section(curr_section)
+                        curr_section = TyrannoSection(new_title, el.level)
             if isinstance(el, ThematicBreak):
                 self.stats['n_pages'] += 1
             else:
