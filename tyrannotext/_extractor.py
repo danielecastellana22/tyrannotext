@@ -18,6 +18,8 @@ class TyrannoDocument:
 
     def __init__(self, md_string):
 
+        self.stats = {'n_pages': 0,
+                      'n_sections': 0}
         self.root = TyrannoSection('root', 0)
 
         curr_section = self.root
@@ -30,10 +32,17 @@ class TyrannoDocument:
                 if curr_section.title != new_title:
                     self.root.add_section(curr_section)
                     curr_section = TyrannoSection(new_title, el.level)
-
+            if isinstance(el, ThematicBreak):
+                self.stats['n_pages'] += 1
             else:
                 # we add the element to the current section
                 curr_section.add_element(el)
+
+        # count sections
+        s = self.root
+        while len(s.subsections) == 1:
+            s = s.subsections[0]
+        self.stats['n_sections'] += len(s.subsections)
 
     def get_plain_text(self):
         return self.root.get_plain_text()
