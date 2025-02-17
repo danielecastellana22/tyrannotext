@@ -33,7 +33,7 @@ class TyrannoDocument:
                     if curr_section.title != new_title:
                         self.root.add_section(curr_section)
                         curr_section = TyrannoSection(new_title, el.level)
-            if isinstance(el, ThematicBreak):
+            elif isinstance(el, ThematicBreak):
                 self.stats['n_pages'] += 1
             else:
                 # we add the element to the current section
@@ -55,6 +55,7 @@ class TyrannoDocument:
 
         title_list = [s_sub.title for s_sub in s.subsections]
         return title_list
+
 
 class TyrannoSection:
 
