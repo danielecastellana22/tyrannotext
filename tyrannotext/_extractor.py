@@ -29,7 +29,10 @@ class TyrannoDocument:
             if isinstance(el, Heading):
                 # we create a new section
                 if len(el.children) > 0:
-                    new_title = el.children[0].children
+                    new_title = el
+                    while not isinstance(new_title.children, str):
+                        new_title = new_title.children[0]
+                    new_title = new_title.children
                     if curr_section.title != new_title:
                         self.root.add_section(curr_section)
                         curr_section = TyrannoSection(new_title, el.level)
